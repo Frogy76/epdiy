@@ -10,6 +10,8 @@
 
 #include <driver/gpio.h>
 #include <driver/i2c_master.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <sdkconfig.h>
 
 // Make this compile von the ESP32 without ifdefing the whole file

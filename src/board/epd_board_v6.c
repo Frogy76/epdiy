@@ -4,6 +4,9 @@
 #include <esp_log.h>
 #include <sdkconfig.h>
 #include <stdint.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <driver/i2c_master.h>
 #include "../output_i2s/i2s_data_bus.h"
 #include "../output_i2s/render_i2s.h"
 #include "../output_i2s/rmt_pulse.h"
@@ -49,7 +52,8 @@
 #define CKH GPIO_NUM_15
 
 typedef struct {
-    i2c_port_t port;
+    i2c_master_bus_handle_t bus_handle;
+    i2c_port_t port;  // Keep for backward compatibility
     bool pwrup;
     bool vcom_ctrl;
     bool wakeup;
@@ -83,18 +87,19 @@ static epd_config_register_t config_reg;
 static void epd_board_init(uint32_t epd_row_width) {
     gpio_hold_dis(CKH);  // free CKH after wakeup
 
-    i2c_config_t conf;
-    conf.mode = I2C_MODE_MASTER;
-    conf.sda_io_num = CFG_SDA;
-    conf.scl_io_num = CFG_SCL;
-    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.master.clk_speed = 400000;
-    conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;
-    ESP_ERROR_CHECK(i2c_param_config(EPDIY_I2C_PORT, &conf));
-
-    ESP_ERROR_CHECK(i2c_driver_install(EPDIY_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0));
-
+    // New I2C master driver API
+    i2c_master_bus_config_t bus_config = {
+        .i2c_port = EPDIY_I2C_PORT,
+        .sda_io_num = CFG_SDA,
+        .scl_io_num = CFG_SCL,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .intr_priority = 0,
+        .trans_queue_depth = 0,
+        .flags.enable_internal_pullup = true,
+    };
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &config_reg.bus_handle));
+    
     config_reg.port = EPDIY_I2C_PORT;
     config_reg.pwrup = false;
     config_reg.vcom_ctrl = false;
@@ -111,7 +116,7 @@ static void epd_board_init(uint32_t epd_row_width) {
     ESP_ERROR_CHECK(gpio_isr_handler_add(CFG_INTR, interrupt_handler, (void*)CFG_INTR));
 
     // set all epdiy lines to output except TPS interrupt + PWR good
-    ESP_ERROR_CHECK(pca9555_set_config(config_reg.port, CFG_PIN_PWRGOOD | CFG_PIN_INT, 1));
+    ESP_ERROR_CHECK(pca9555_set_config(config_reg.bus_handle, CFG_PIN_PWRGOOD | CFG_PIN_INT, 1));
 
     // use latch pin as GPIO
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[V4_LATCH_ENABLE], PIN_FUNC_GPIO);
@@ -130,25 +135,25 @@ static void epd_board_deinit() {
     // rtc_gpio_isolate(CFG_INTR);
 
     ESP_ERROR_CHECK(pca9555_set_config(
-        config_reg.port, CFG_PIN_PWRGOOD | CFG_PIN_INT | CFG_PIN_VCOM_CTRL | CFG_PIN_PWRUP, 1
+        config_reg.bus_handle, CFG_PIN_PWRGOOD | CFG_PIN_INT | CFG_PIN_VCOM_CTRL | CFG_PIN_PWRUP, 1
     ));
 
     int tries = 0;
-    while (!((pca9555_read_input(config_reg.port, 1) & 0xC0) == 0x80)) {
+    while (!((pca9555_read_input(config_reg.bus_handle, 1) & 0xC0) == 0x80)) {
         if (tries >= 500) {
             ESP_LOGE("epdiy", "failed to shut down TPS65185!");
             break;
         }
         tries++;
         vTaskDelay(1);
-        printf("%X\n", pca9555_read_input(config_reg.port, 1));
+        printf("%X\n", pca9555_read_input(config_reg.bus_handle, 1));
     }
     // Not sure why we need this delay, but the TPS65185 seems to generate an interrupt after some
     // time that needs to be cleared.
     vTaskDelay(500);
-    pca9555_read_input(config_reg.port, 0);
-    pca9555_read_input(config_reg.port, 1);
-    i2c_driver_delete(EPDIY_I2C_PORT);
+    pca9555_read_input(config_reg.bus_handle, 0);
+    pca9555_read_input(config_reg.bus_handle, 1);
+    ESP_ERROR_CHECK(i2c_del_master_bus(config_reg.bus_handle));
     gpio_isr_handler_remove(CFG_INTR);
     gpio_uninstall_isr_service();
     gpio_reset_pin(CFG_INTR);
@@ -177,7 +182,7 @@ static void epd_board_set_ctrl(epd_ctrl_state_t* state, const epd_ctrl_state_t* 
         if (config_reg.wakeup)
             value |= CFG_PIN_WAKEUP;
 
-        ESP_ERROR_CHECK(pca9555_set_value(config_reg.port, value, 1));
+        ESP_ERROR_CHECK(pca9555_set_value(config_reg.bus_handle, value, 1));
     }
 
     if (state->ep_latch_enable) {
@@ -205,13 +210,13 @@ static void epd_board_poweron(epd_ctrl_state_t* state) {
     vTaskDelay(1);
 
     int tries = 0;
-    while (!(pca9555_read_input(config_reg.port, 1) & CFG_PIN_PWRGOOD)) {
+    while (!(pca9555_read_input(config_reg.bus_handle, 1) & CFG_PIN_PWRGOOD)) {
         if (tries >= 500) {
             ESP_LOGE(
                 "epdiy",
                 "Power enable failed! INT status: 0x%X 0x%X",
-                tps_read_register(config_reg.port, TPS_REG_INT1),
-                tps_read_register(config_reg.port, TPS_REG_INT2)
+                tps_read_register(config_reg.bus_handle, TPS_REG_INT1),
+                tps_read_register(config_reg.bus_handle, TPS_REG_INT2)
             );
             return;
         }
@@ -219,9 +224,9 @@ static void epd_board_poweron(epd_ctrl_state_t* state) {
         vTaskDelay(1);
     }
 
-    ESP_ERROR_CHECK(tps_write_register(config_reg.port, TPS_REG_ENABLE, 0x3F));
+    ESP_ERROR_CHECK(tps_write_register(config_reg.bus_handle, TPS_REG_ENABLE, 0x3F));
 
-    tps_set_vcom(config_reg.port, vcom);
+    tps_set_vcom(config_reg.bus_handle, vcom);
 
     state->ep_sth = true;
     mask = (const epd_ctrl_state_t){
@@ -229,12 +234,12 @@ static void epd_board_poweron(epd_ctrl_state_t* state) {
     };
     epd_board_set_ctrl(state, &mask);
 
-    while (!((tps_read_register(config_reg.port, TPS_REG_PG) & 0xFA) == 0xFA)) {
+    while (!((tps_read_register(config_reg.bus_handle, TPS_REG_PG) & 0xFA) == 0xFA)) {
         if (tries >= 500) {
             ESP_LOGE(
                 "epdiy",
                 "Power enable failed! PG status: %X",
-                tps_read_register(config_reg.port, TPS_REG_PG)
+                tps_read_register(config_reg.bus_handle, TPS_REG_PG)
             );
             return;
         }
@@ -265,7 +270,7 @@ static void epd_board_measure_vcom(epd_ctrl_state_t* state) {
     };
     epd_board_set_ctrl(state, &mask);
 
-    while (!(pca9555_read_input(config_reg.port, 1) & CFG_PIN_PWRGOOD)) {
+    while (!(pca9555_read_input(config_reg.bus_handle, 1) & CFG_PIN_PWRGOOD)) {
     }
     ESP_LOGI("epdiy", "Power rails enabled");
 
@@ -276,12 +281,12 @@ static void epd_board_measure_vcom(epd_ctrl_state_t* state) {
     epd_board_set_ctrl(state, &mask);
 
     int tries = 0;
-    while (!((tps_read_register(config_reg.port, TPS_REG_PG) & 0xFA) == 0xFA)) {
+    while (!((tps_read_register(config_reg.bus_handle, TPS_REG_PG) & 0xFA) == 0xFA)) {
         if (tries >= 500) {
             ESP_LOGE(
                 "epdiy",
                 "Power enable failed! PG status: %X",
-                tps_read_register(config_reg.port, TPS_REG_PG)
+                tps_read_register(config_reg.bus_handle, TPS_REG_PG)
             );
             return;
         }
