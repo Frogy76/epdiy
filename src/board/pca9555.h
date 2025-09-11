@@ -1,7 +1,7 @@
 #ifndef PCA9555_H
 #define PCA9555_H
 
-#include <driver/i2c.h>
+#include <driver/i2c_master.h>
 #include <esp_err.h>
 
 #define PCA_PIN_P00 0x0001
@@ -27,9 +27,9 @@
 
 static const int EPDIY_PCA9555_ADDR = 0x20;
 
-uint8_t pca9555_read_input(i2c_port_t port, int high_port);
-esp_err_t pca9555_set_value(i2c_port_t port, uint8_t config_value, int high_port);
-esp_err_t pca9555_set_inversion(i2c_port_t port, uint8_t config_value, int high_port);
-esp_err_t pca9555_set_config(i2c_port_t port, uint8_t config_value, int high_port);
+uint8_t pca9555_read_input(i2c_master_bus_handle_t bus_handle, int high_port);
+esp_err_t pca9555_set_value(i2c_master_bus_handle_t bus_handle, uint8_t config_value, int high_port);
+esp_err_t pca9555_set_inversion(i2c_master_bus_handle_t bus_handle, uint8_t config_value, int high_port);
+esp_err_t pca9555_set_config(i2c_master_bus_handle_t bus_handle, uint8_t config_value, int high_port);
 
 #endif  // PCA9555_H
