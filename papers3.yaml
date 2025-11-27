@@ -1,0 +1,448 @@
+esphome:
+  name: m5papers3
+  friendly_name: m5papers3
+  build_path: /config/esphome/m5papers3
+  platformio_options:
+    build_flags: "-DBOARD_HAS_PSRAM"
+  libraries:
+    - epidy=https://github.com/Frogy76/epdiy
+  on_boot:
+    then:
+      - rtttl.play: 'siren:d=8,o=5,b=100:d,e,d,e,d,e,d,e'
+      - delay: 5s
+      - component.update: ed047tc1_display
+      - lambda: |-
+          id(system_initialized) = true;
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB  
+  framework:
+    type: esp-idf
+    version: latest
+    sdkconfig_options:
+      CONFIG_EPD_OUTPUT_LUT_ASSEMBLY: "y"
+      CONFIG_ESP32S3_INSTRUCTION_SET_AI_DSP: "y"
+      CONFIG_ESP32S3_VECTOR_INSTRUCTIONS_SUPPORT: "y"
+
+globals:
+  - id: system_initialized
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+interval:
+  - interval: 8s
+    then:
+      - light.turn_on: statled
+      - delay: 1s
+      - light.turn_off: statled
+          
+
+logger:
+  level: DEBUG
+  baud_rate: 0
+  logs:
+    api.service: WARN
+    wifi: WARN
+    esp-idf: NONE
+    light: WARN
+debug:
+  update_interval: 10s
+
+api:
+  # encryption:
+  #   key: !secret api_key
+  reboot_timeout: 6h
+
+ota:
+  - platform: esphome
+    #password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  reboot_timeout: 6h
+  #power_save_mode: LIGHT
+
+external_components:
+  - source: github://patrick3399/esphome_components
+  # - source: github://n-serrette/esphome_sd_card   #If need SD Card Support
+i2c:
+  sda: GPIO41
+  scl: GPIO42
+  scan: true
+  id: bus_internal
+  frequency: 200kHz
+
+# sd_mmc_card:  #If need SD Card Support
+#   id: micro_sd
+#   mode_1bit: true
+#   clk_pin: GPIO7
+#   cmd_pin: GPIO8
+#   data0_pin: GPIO9
+#   data3_pin: GPIO10
+
+# sd_file_server:  #If need SD Card Support
+#   id: file_server
+#   url_prefix: file
+#   root_path: "/"
+#   enable_deletion: true
+#   enable_download: true
+#   enable_upload: true
+
+touchscreen:
+  platform: gt911
+  id: my_touchscreen
+  interrupt_pin: GPIO48
+  transform:
+    mirror_x: true
+    mirror_y: true
+    swap_xy: false
+  on_touch:
+    - lambda: |-
+          ESP_LOGI("cal", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
+              touch.x,
+              touch.y,
+              touch.x_raw,
+              touch.y_raw
+              );
+light:
+  - platform: monochromatic
+    id: statled
+    name: "Status LED"
+    output: gpio_0
+    restore_mode: ALWAYS_OFF
+    internal: True
+    disabled_by_default: True
+
+output:
+  - platform: ledc
+    id: rtttl_pin
+    pin: 21
+  - platform: ledc
+    id: gpio_0
+    pin: 0
+    inverted: True
+rtttl:
+  output: rtttl_pin
+  id: rtttl_buzz
+  gain: 60%
+
+text_sensor:
+  - platform: debug
+    device:
+      name: "Device Info"
+    reset_reason:
+      name: "Reset Reason"
+
+sensor:
+  - platform: debug
+    free:
+      name: "Heap Free"
+    block:
+      name: "Heap Max Block"
+    loop_time:
+      name: "Loop Time"
+    psram:
+      name: "Free PSRAM"
+  - platform: internal_temperature
+    name: "Chip Temp"
+  - platform: adc
+    pin: GPIO3
+    name: "Battery Voltage"
+    update_interval: 30s
+    attenuation: 12db
+    filters:
+      - multiply: 2.0
+  - platform: adc
+    pin: GPIO5
+    name: "USB DET"
+    update_interval: 30s
+    attenuation: 12db
+    filters:
+      - multiply: 2.0
+  #- platform: bmi270
+  #  address: 0x68
+  #  accel_x:
+  #    name: "BMI270 Accel X"
+  #  accel_y:
+  #    name: "BMI270 Accel Y"
+  #  accel_z:
+  #    name: "BMI270 Accel Z"
+  #  gyro_x:
+  #    name: "BMI270 Gyro X"
+  #  gyro_y:
+  #    name: "BMI270 Gyro Y"
+  #  gyro_z:
+  #    name: "BMI270 Gyro Z"
+  #  temperature:
+  #    name: "BMI270 Temperature"
+  #  power_save_mode: LOW_POWER # OR NORMAL
+  #  update_interval: 60s
+    # Add new configuration options specific to BMI270 if needed
+    # For example, accelerometer and gyroscope range selection:
+    # accel_range: '8g' # Options: '2g', '4g', '8g', '16g' [cite: 5]
+    # gyro_range: '2000dps' # Options: '125dps', '250dps', '500dps', '1000dps', '2000dps' [cite: 5]
+
+  # - platform: sd_mmc_card  #If need SD Card Support
+  #   type: used_space
+  #   name: "SD card used space"
+  # - platform: sd_mmc_card
+  #   type: total_space
+  #   name: "SD card total space"
+
+
+# text_sensor:
+  # - platform: sd_mmc_card  #If need SD Card Support
+  #   sd_card_type:
+  #     name: "SD card type"
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: 4
+      inverted: True
+    name: "Charge Status"
+    device_class: battery_charging
+
+
+time:
+  - platform: pcf8563  #BM8563
+    id: pcf8563_time
+    address: 0x51
+    timezone: Asia/Taipei
+    update_interval: never
+    
+  - platform: homeassistant
+    id: homeassistant_time
+    timezone: Asia/Taipei
+    update_interval: 1h
+    on_time_sync:
+      then:
+        pcf8563.write_time:
+          id: pcf8563_time
+
+display:
+  - platform: ed047tc1
+    id: ed047tc1_display
+    pwr_pin: GPIO45
+    bst_en_pin: GPIO46
+    xstl_pin: GPIO13
+    xle_pin: GPIO15
+    spv_pin: GPIO17
+    ckv_pin: GPIO18
+    pclk_pin: GPIO16
+    d0_pin: GPIO6
+    d1_pin: GPIO14
+    d2_pin: GPIO7
+    d3_pin: GPIO12
+    d4_pin: GPIO9
+    d5_pin: GPIO11
+    d6_pin: GPIO8
+    d7_pin: GPIO10
+    update_interval: never
+    rotation: 90
+    lambda: |-
+       it.print(it.get_width() / 2, it.get_height() / 12 *1 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline01).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *2 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline02).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *3 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline03).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *4 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline04).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *5 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline05).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *6 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline06).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *7 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline07).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *8 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline08).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *9 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline09).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *10 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline10).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() / 12 *11 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline11).state.c_str());
+       it.print(it.get_width() / 2, it.get_height() , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline12).state.c_str());
+font:
+  - file: "gfonts://Roboto"
+    id: Roboto70
+    size: 70
+
+text:
+  - platform: template
+    name: "Text Line 01"
+    id: textline01
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 01'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 02"
+    id: textline02
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 02'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 03"
+    id: textline03
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 03'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 04"
+    id: textline04
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 04'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 05"
+    id: textline05
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 05'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 06"
+    id: textline06
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 06'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 07"
+    id: textline07
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 07'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 08"
+    id: textline08
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 08'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 09"
+    id: textline09
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 09'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 10"
+    id: textline10
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 10'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 11"
+    id: textline11
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 11'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
+  - platform: template
+    name: "Text Line 12"
+    id: textline12
+    optimistic: true
+    min_length: 0
+    max_length: 26
+    initial_value: 'TEXT 12'
+    mode: text
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(system_initialized) == true;'
+            then:
+              - component.update: ed047tc1_display
