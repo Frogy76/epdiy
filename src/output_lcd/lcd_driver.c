@@ -45,6 +45,18 @@
 #include <soc/lcd_periph.h>
 #include <soc/rmt_struct.h>
 
+// ESP-IDF 5.5+ compatibility: gpio_hal_iomux_func_sel was removed
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+#include <esp_rom_gpio.h>
+#define gpio_hal_iomux_func_sel(reg, func) esp_rom_gpio_iomux_func_sel(reg, func)
+
+// ESP-IDF 5.5+ compatibility: __DECLARE_RCC_ATOMIC_ENV macro was removed
+// Define a compatibility wrapper for RCC atomic operations
+#ifndef __DECLARE_RCC_ATOMIC_ENV
+#define __DECLARE_RCC_ATOMIC_ENV int __rcc_atomic_var
+#endif
+#endif
+
 #define TAG "epdiy"
 
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 3, 2)
@@ -278,6 +290,25 @@ static esp_err_t init_dma_trans_link() {
     lcd.dma_nodes[1].next = &lcd.dma_nodes[0];
 
     // alloc DMA channel and connect to LCD peripheral
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+    // ESP-IDF 5.5+: Use new GDMA API
+    gdma_channel_alloc_config_t dma_chan_config = {
+        .direction = GDMA_CHANNEL_DIRECTION_TX,
+    };
+    ESP_RETURN_ON_ERROR(
+        gdma_new_ahb_channel(&dma_chan_config, &lcd.dma_chan), TAG, "alloc DMA channel failed"
+    );
+    gdma_connect_config_t connect_config = {
+        .periph = GDMA_TRIG_PERIPH_LCD,
+    };
+    ESP_RETURN_ON_ERROR(gdma_connect(lcd.dma_chan, &connect_config), TAG, "dma connect error");
+    gdma_transfer_config_t transfer_config = {
+        .max_data_burst_size = 16,
+        .access_ext_mem = true,
+    };
+    ESP_RETURN_ON_ERROR(gdma_config_transfer(lcd.dma_chan, &transfer_config), TAG, "dma setup error");
+#else
+    // ESP-IDF < 5.5: Use legacy GDMA API
     gdma_channel_alloc_config_t dma_chan_config = {
         .direction = GDMA_CHANNEL_DIRECTION_TX,
     };
@@ -291,6 +322,7 @@ static esp_err_t init_dma_trans_link() {
         .sram_trans_align = 4,
     };
     ESP_RETURN_ON_ERROR(gdma_set_transfer_ability(lcd.dma_chan, &ability), TAG, "dma setup error");
+#endif
 
     gdma_tx_event_callbacks_t cbs = {
         .on_trans_eof = lcd_rgb_panel_eof_handler,
