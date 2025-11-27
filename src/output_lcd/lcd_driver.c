@@ -50,14 +50,20 @@
 #include <esp_rom_gpio.h>
 #include <soc/gpio_sig_map.h>
 
-// gpio_hal_iomux_func_sel was removed - use gpio_iomux_func_sel instead
+// gpio_hal_iomux_func_sel was removed in ESP-IDF 5.5+
+// It's now part of ROM, call via esp_rom_gpio_connect_in_signal
 #ifndef gpio_hal_iomux_func_sel
-#define gpio_hal_iomux_func_sel(reg, func) gpio_iomux_func_sel(reg, func)
+static inline void gpio_hal_iomux_func_sel(uint32_t pin_name, uint32_t func)
+{
+    // In ESP-IDF 5.5+, just set the pin to GPIO mode
+    // The actual function is PIN_FUNC_GPIO which is typically 2
+    PIN_FUNC_SELECT(pin_name, func);
+}
 #endif
 
-// __DECLARE_RCC_ATOMIC_ENV macro was removed - provide empty compatibility shim
+// __DECLARE_RCC_ATOMIC_ENV macro was removed - provide dummy variable
 #ifndef __DECLARE_RCC_ATOMIC_ENV
-#define __DECLARE_RCC_ATOMIC_ENV
+#define __DECLARE_RCC_ATOMIC_ENV int __rcc_atomic_dummy __attribute__((unused)) = 0
 #endif
 #endif
 
