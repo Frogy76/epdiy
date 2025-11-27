@@ -61,9 +61,9 @@ static inline void gpio_hal_iomux_func_sel(uint32_t pin_name, uint32_t func)
 }
 #endif
 
-// __DECLARE_RCC_ATOMIC_ENV macro was removed - provide dummy variable
+// __DECLARE_RCC_ATOMIC_ENV macro was removed - provide dummy value that can be cast to void
 #ifndef __DECLARE_RCC_ATOMIC_ENV
-#define __DECLARE_RCC_ATOMIC_ENV int __rcc_atomic_dummy __attribute__((unused)) = 0
+#define __DECLARE_RCC_ATOMIC_ENV 0
 #endif
 #endif
 
