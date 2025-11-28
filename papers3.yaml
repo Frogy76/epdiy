@@ -246,7 +246,7 @@ display:
     d6_pin: GPIO8
     d7_pin: GPIO10
     update_interval: never
-    rotation: 90
+    rotation: 270
     lambda: |-
        it.print(it.get_width() / 2, it.get_height() / 12 *1 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline01).state.c_str());
        it.print(it.get_width() / 2, it.get_height() / 12 *2 , id(Roboto70), TextAlign::BOTTOM_CENTER, id(textline02).state.c_str());
