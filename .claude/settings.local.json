@@ -4,7 +4,9 @@
       "Bash(cat:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nAdd ESP-IDF 5.5.1 compatibility fixes for LCD driver\n\nThis commit resolves three compilation errors when building with ESP-IDF 5.5.1:\n\n1. Fix gpio_hal_iomux_func_sel compatibility\n   - Map deprecated gpio_hal_iomux_func_sel to esp_rom_gpio_iomux_func_sel\n   - Required for ESP-IDF 5.5+ where the HAL function was removed\n\n2. Fix __DECLARE_RCC_ATOMIC_ENV macro compatibility\n   - Add compatibility shim for removed RCC atomic environment macro\n   - Used internally by lcd_ll_enable_interrupt in ESP-IDF HAL\n\n3. Update deprecated GDMA API to new API\n   - Replace gdma_new_channel with gdma_new_ahb_channel\n   - Replace GDMA_MAKE_TRIGGER pattern with gdma_connect_config_t\n   - Replace gdma_set_transfer_ability with gdma_config_transfer\n   - Maintains backward compatibility with ESP-IDF < 5.5 using conditional compilation\n\nAll changes use #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0) guards\nto ensure backward compatibility with older ESP-IDF versions.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(git commit:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
